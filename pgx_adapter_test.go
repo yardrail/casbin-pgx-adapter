@@ -2,7 +2,6 @@ package pgxadapter_test
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"testing"
@@ -10,7 +9,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	pgxadapter "github.com/noho-digital/casbin-pgx-adapter"
+	pgxadapter "github.com/yardrail/casbin-pgx-adapter"
 )
 
 // testPsql is a squirrel statement builder with PostgreSQL dollar placeholders for use in tests.
@@ -115,7 +114,9 @@ func TestNewAdapter(t *testing.T) {
 					if adapter.GetPool() != nil {
 						adapter.GetPool().Close()
 					}
-					adapter.GetDB().Close()
+					if c := adapter.GetConn(); c != nil {
+						_ = c.Close(ctx)
+					}
 				}
 			})
 
@@ -197,8 +198,8 @@ func TestNewAdapterWithConfig(t *testing.T) {
 			}
 
 			t.Cleanup(func() {
-				if adapter != nil {
-					adapter.GetDB().Close()
+				if c := adapter.GetConn(); c != nil {
+					_ = c.Close(context.Background())
 				}
 			})
 
@@ -257,6 +258,7 @@ func TestNewAdapterWithConn(t *testing.T) {
 			_, _ = conn.Exec(ctx, "DROP TABLE IF EXISTS "+quotedTableName+" CASCADE")
 
 			t.Cleanup(func() {
+				_ = conn.Close(ctx)
 				cleanConn, err := pgx.Connect(ctx, dbURL)
 				if err == nil {
 					_, _ = cleanConn.Exec(ctx, "DROP TABLE IF EXISTS "+quotedTableName+" CASCADE")
@@ -264,7 +266,7 @@ func TestNewAdapterWithConn(t *testing.T) {
 				}
 			})
 
-			// NewAdapterWithConn closes the passed conn after extracting config
+			// NewAdapterWithConn retains the passed connection
 			adapter, err := pgxadapter.NewAdapterWithConn(conn, pgxadapter.WithTableName(tt.tableName))
 
 			if tt.wantErr {
@@ -623,10 +625,10 @@ func TestWithIndex(t *testing.T) {
 				t.Fatalf("Failed to create adapter: %v", err)
 			}
 
-			// Use the adapter's *sql.DB for verification
+			// Use the adapter's DB for verification
 			for _, expectedIndex := range tt.expectedIndexes {
 				var exists bool
-				err = adapter.GetDB().QueryRowContext(ctx,
+				err = adapter.GetDB().QueryRow(ctx,
 					"SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE tablename = $1 AND indexname = $2)",
 					testTableName, expectedIndex).Scan(&exists)
 				if err != nil {
@@ -640,9 +642,8 @@ func TestWithIndex(t *testing.T) {
 	}
 }
 
-// setupTestAdapter creates a test adapter and returns it along with a *sql.DB for verification queries.
-// The returned *sql.DB is the adapter's own database connection.
-func setupTestAdapter(t *testing.T, tableName string) (*pgxadapter.PgxAdapter, *sql.DB) {
+// setupTestAdapter creates a test adapter and returns it along with the pool for verification queries.
+func setupTestAdapter(t *testing.T, tableName string) (*pgxadapter.PgxAdapter, *pgxpool.Pool) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -674,5 +675,5 @@ func setupTestAdapter(t *testing.T, tableName string) (*pgxadapter.PgxAdapter, *
 		pool.Close()
 	})
 
-	return adapter, adapter.GetDB()
+	return adapter, pool
 }

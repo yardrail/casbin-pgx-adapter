@@ -83,7 +83,7 @@ func TestLoadPolicy(t *testing.T) {
 			ctx := context.Background()
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to count policies: %v", err)
 			}
@@ -197,7 +197,7 @@ func TestSavePolicy(t *testing.T) {
 			ctx := context.Background()
 			var pCount int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).Where(sq.Eq{"ptype": "p"}).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&pCount)
+			err = db.QueryRow(ctx, q, args...).Scan(&pCount)
 			if err != nil {
 				t.Fatalf("Failed to count p policies: %v", err)
 			}
@@ -208,7 +208,7 @@ func TestSavePolicy(t *testing.T) {
 
 			var gCount int
 			q, args, _ = testPsql.Select("COUNT(*)").From(tableName).Where(sq.Eq{"ptype": "g"}).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&gCount)
+			err = db.QueryRow(ctx, q, args...).Scan(&gCount)
 			if err != nil {
 				t.Fatalf("Failed to count g policies: %v", err)
 			}
@@ -291,7 +291,7 @@ func TestAddPolicy(t *testing.T) {
 			ctx := context.Background()
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).Where(sq.Eq{"ptype": tt.ptype}).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to verify policy: %v", err)
 			}
@@ -381,7 +381,7 @@ func TestRemovePolicy(t *testing.T) {
 			ctx := context.Background()
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to count remaining policies: %v", err)
 			}
@@ -405,7 +405,7 @@ func TestRemovePolicy(t *testing.T) {
 			Columns("ptype", "v0", "v1", "v2", "v3", "v4", "v5").
 			Values("p", "alice", "data1", "read", "", "", "").
 			ToSql()
-		_, err := db.ExecContext(ctx, q, args...)
+		_, err := db.Exec(ctx, q, args...)
 		if err != nil {
 			t.Fatalf("Failed to insert test row with empty strings: %v", err)
 		}
@@ -413,7 +413,7 @@ func TestRemovePolicy(t *testing.T) {
 		// Verify the row was inserted
 		var count int
 		q, args, _ = testPsql.Select("COUNT(*)").From(tableName).ToSql()
-		err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+		err = db.QueryRow(ctx, q, args...).Scan(&count)
 		if err != nil {
 			t.Fatalf("Failed to count rows: %v", err)
 		}
@@ -429,7 +429,7 @@ func TestRemovePolicy(t *testing.T) {
 
 		// Verify the row was deleted
 		q, args, _ = testPsql.Select("COUNT(*)").From(tableName).ToSql()
-		err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+		err = db.QueryRow(ctx, q, args...).Scan(&count)
 		if err != nil {
 			t.Fatalf("Failed to count rows after delete: %v", err)
 		}
@@ -540,7 +540,7 @@ func TestRemoveFilteredPolicy(t *testing.T) {
 			ctx := context.Background()
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to count remaining policies: %v", err)
 			}

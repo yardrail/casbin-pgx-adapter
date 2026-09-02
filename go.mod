@@ -1,4 +1,4 @@
-module github.com/noho-digital/casbin-pgx-adapter
+module github.com/yardrail/casbin-pgx-adapter
 
 go 1.25.0
 

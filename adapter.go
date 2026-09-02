@@ -37,7 +37,7 @@ func (a *PgxAdapter) RemoveFilteredPolicy(sec string, ptype string, fieldIndex i
 	return a.RemoveFilteredPolicyCtx(context.Background(), sec, ptype, fieldIndex, fieldValues...)
 }
 
-// LoadPolicy loads all policy rules from the storage
+// LoadPolicyCtx loads all policy rules from the storage
 func (a *PgxAdapter) LoadPolicyCtx(ctx context.Context, model model.Model) error {
 
 	q, args, err := a.psql.
@@ -50,12 +50,12 @@ func (a *PgxAdapter) LoadPolicyCtx(ctx context.Context, model model.Model) error
 		return fmt.Errorf("failed to build query: %w", err)
 	}
 
-	rows, err := a.db.QueryContext(ctx, q, args...)
+	rows, err := a.db.Query(ctx, q, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to query policies: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close()
 
 	for rows.Next() {
 		var ptype string
@@ -96,20 +96,20 @@ func (a *PgxAdapter) LoadPolicyCtx(ctx context.Context, model model.Model) error
 	return nil
 }
 
-// SavePolicy saves all policy rules to the storage
+// SavePolicyCtx saves all policy rules to the storage
 func (a *PgxAdapter) SavePolicyCtx(ctx context.Context, model model.Model) error {
 
 	// Start a transaction
-	tx, err := a.db.BeginTx(ctx, nil)
+	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	// Clear existing policies
 	quotedTableName := pgx.Identifier{a.tableName}.Sanitize()
 	truncateSQL := "TRUNCATE TABLE " + quotedTableName
-	if _, err := tx.ExecContext(ctx, truncateSQL); err != nil {
+	if _, err := tx.Exec(ctx, truncateSQL); err != nil {
 		return fmt.Errorf("failed to clear policies: %w", err)
 	}
 
@@ -157,20 +157,20 @@ func (a *PgxAdapter) SavePolicyCtx(ctx context.Context, model model.Model) error
 			return fmt.Errorf("failed to build insert query: %w", err)
 		}
 
-		if _, err := tx.ExecContext(ctx, sqlStr, args...); err != nil {
+		if _, err := tx.Exec(ctx, sqlStr, args...); err != nil {
 			return fmt.Errorf("failed to insert policies: %w", err)
 		}
 	}
 
 	// Commit transaction
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
 }
 
-// AddPolicy adds a policy rule to the storage
+// AddPolicyCtx adds a policy rule to the storage
 func (a *PgxAdapter) AddPolicyCtx(ctx context.Context, sec string, ptype string, rule []string) error {
 
 	vals := make([]any, 7)
@@ -195,7 +195,7 @@ func (a *PgxAdapter) AddPolicyCtx(ctx context.Context, sec string, ptype string,
 		return fmt.Errorf("failed to build insert query: %w", err)
 	}
 
-	_, err = a.db.ExecContext(ctx, sqlStr, args...)
+	_, err = a.db.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return fmt.Errorf("failed to add policy: %w", err)
 	}
@@ -203,7 +203,7 @@ func (a *PgxAdapter) AddPolicyCtx(ctx context.Context, sec string, ptype string,
 	return nil
 }
 
-// RemovePolicy removes a policy rule from the storage
+// RemovePolicyCtx removes a policy rule from the storage
 func (a *PgxAdapter) RemovePolicyCtx(ctx context.Context, sec string, ptype string, rule []string) error {
 
 	deleteBuilder := a.psql.Delete(a.tableName).Where(sq.Eq{"ptype": ptype})
@@ -221,7 +221,7 @@ func (a *PgxAdapter) RemovePolicyCtx(ctx context.Context, sec string, ptype stri
 		return fmt.Errorf("failed to build delete query: %w", err)
 	}
 
-	_, err = a.db.ExecContext(ctx, sqlStr, args...)
+	_, err = a.db.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return fmt.Errorf("failed to remove policy: %w", err)
 	}
@@ -229,7 +229,7 @@ func (a *PgxAdapter) RemovePolicyCtx(ctx context.Context, sec string, ptype stri
 	return nil
 }
 
-// RemoveFilteredPolicy removes policy rules that match the filter from the storage
+// RemoveFilteredPolicyCtx removes policy rules that match the filter from the storage
 func (a *PgxAdapter) RemoveFilteredPolicyCtx(ctx context.Context, sec string, ptype string, fieldIndex int, fieldValues ...string) error {
 
 	if fieldIndex < 0 || fieldIndex > 5 {
@@ -254,7 +254,7 @@ func (a *PgxAdapter) RemoveFilteredPolicyCtx(ctx context.Context, sec string, pt
 		return fmt.Errorf("failed to build delete query: %w", err)
 	}
 
-	_, err = a.db.ExecContext(ctx, sqlStr, args...)
+	_, err = a.db.Exec(ctx, sqlStr, args...)
 	if err != nil {
 		return fmt.Errorf("failed to remove filtered policies: %w", err)
 	}

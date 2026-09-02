@@ -2,7 +2,6 @@ package pgxadapter
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,11 +9,23 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/casbin/casbin/v3/persist"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 )
 
 var _ persist.Adapter = (*PgxAdapter)(nil)
+
+// DB is the pgx-native surface the adapter runs every query through.
+// *pgxpool.Pool, *pgx.Conn, and pgx.Tx all satisfy it, so an adapter can be
+// bound to a caller's open transaction (see NewAdapterWithDB) and have its
+// policy writes committed or rolled back together with that transaction's
+// domain writes.
+type DB interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
 
 const (
 	defaultTableName = "casbin_rule"
@@ -23,7 +34,8 @@ const (
 
 // PgxAdapter represents the pgx adapter for policy persistence
 type PgxAdapter struct {
-	db         *sql.DB
+	db         DB
+	conn       *pgx.Conn
 	pool       *pgxpool.Pool
 	tableName  string
 	database   string
@@ -72,6 +84,31 @@ func WithPool() Option {
 	}
 }
 
+// newAdapter builds the struct, applies opts, and (unless skipSchema)
+// ensures the table and indexes exist.
+func newAdapter(db DB, skipSchema bool, opts ...Option) (*PgxAdapter, error) {
+	a := &PgxAdapter{
+		db:        db,
+		tableName: defaultTableName,
+		database:  defaultDatabase,
+		psql:      sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+	}
+
+	for _, opt := range opts {
+		opt(a)
+	}
+
+	if skipSchema {
+		return a, nil
+	}
+
+	if err := a.createTable(); err != nil {
+		return nil, fmt.Errorf("failed to create table: %w", err)
+	}
+
+	return a, nil
+}
+
 // NewAdapter creates a new adapter with a connection string.
 // If WithPool is provided, a connection pool is created. Otherwise, a single connection is used.
 func NewAdapter(connStr string, opts ...Option) (*PgxAdapter, error) {
@@ -97,91 +134,65 @@ func NewAdapter(connStr string, opts ...Option) (*PgxAdapter, error) {
 		return NewAdapterWithPool(pool, opts...)
 	}
 
-	config, err := pgx.ParseConfig(connStr)
+	conn, err := pgx.Connect(ctx, connStr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse connection string: %w", err)
+		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
 
-	return NewAdapterWithConfig(config, opts...)
+	if err := conn.Ping(ctx); err != nil {
+		conn.Close(ctx)
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	return NewAdapterWithConn(conn, opts...)
 }
 
-// NewAdapterWithConfig creates a new adapter with a given pgx.ConnConfig.
+// NewAdapterWithConfig creates a new adapter from a pgx.ConnConfig, opening a
+// single connection.
 func NewAdapterWithConfig(config *pgx.ConnConfig, opts ...Option) (*PgxAdapter, error) {
-	db := stdlib.OpenDB(*config)
-
-	a := &PgxAdapter{
-		db:        db,
-		tableName: defaultTableName,
-		database:  defaultDatabase,
-		psql:      sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+	conn, err := pgx.ConnectConfig(context.Background(), config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect: %w", err)
 	}
 
-	// Apply options
-	for _, opt := range opts {
-		opt(a)
-	}
-
-	// Create table if it doesn't exist
-	if err := a.createTable(); err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
-	}
-
-	return a, nil
-
+	return NewAdapterWithConn(conn, opts...)
 }
 
-// NewAdapterWithConn creates a new adapter with an existing connection.
-// The connection's config is extracted to create a *sql.DB via stdlib.OpenDB.
-// The passed connection is closed after extracting its config.
+// NewAdapterWithConn creates a new adapter with an existing connection. The
+// connection is retained (not closed) and used for every query.
 func NewAdapterWithConn(conn *pgx.Conn, opts ...Option) (*PgxAdapter, error) {
-	connConfig := conn.Config()
-	conn.Close(context.Background())
-
-	db := stdlib.OpenDB(*connConfig)
-
-	a := &PgxAdapter{
-		db:        db,
-		tableName: defaultTableName,
-		database:  defaultDatabase,
-		psql:      sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+	a, err := newAdapter(conn, false, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply options
-	for _, opt := range opts {
-		opt(a)
-	}
-
-	// Create table if it doesn't exist
-	if err := a.createTable(); err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
-	}
+	a.conn = conn
 
 	return a, nil
 }
 
-// NewAdapterWithPool creates a new adapter with an existing connection pool
+// NewAdapterWithPool creates a new adapter with an existing connection pool.
 func NewAdapterWithPool(pool *pgxpool.Pool, opts ...Option) (*PgxAdapter, error) {
-	db := stdlib.OpenDBFromPool(pool)
-
-	a := &PgxAdapter{
-		db:        db,
-		pool:      pool,
-		tableName: defaultTableName,
-		database:  defaultDatabase,
-		psql:      sq.StatementBuilder.PlaceholderFormat(sq.Dollar),
+	a, err := newAdapter(pool, false, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	// Apply options
-	for _, opt := range opts {
-		opt(a)
-	}
-
-	// Create table if it doesn't exist
-	if err := a.createTable(); err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
-	}
+	a.pool = pool
 
 	return a, nil
+}
+
+// NewAdapterWithDB creates an adapter over any DB — a *pgxpool.Pool, a
+// *pgx.Conn, or an open pgx.Tx. It does NOT create the casbin_rule table or
+// its indexes: the caller owns the schema (running DDL inside a caller's
+// transaction is usually undesirable). Use NewAdapterWithPool /
+// NewAdapterWithConn when you want the table created automatically.
+//
+// Binding to a pgx.Tx is what lets a policy write land in the same
+// transaction as the domain-row change it derives from.
+func NewAdapterWithDB(db DB, opts ...Option) (*PgxAdapter, error) {
+	return newAdapter(db, true, opts...)
 }
 
 // createTable creates the casbin_rule table if it doesn't exist
@@ -207,10 +218,10 @@ func (a *PgxAdapter) createTable() error {
 		ON ` + quotedTableName + `(ptype, COALESCE(v0,''), COALESCE(v1,''), COALESCE(v2,''), COALESCE(v3,''), COALESCE(v4,''), COALESCE(v5,''))`
 
 	// Execute creation statements
-	if _, err := a.db.ExecContext(ctx, createTableSQL); err != nil {
+	if _, err := a.db.Exec(ctx, createTableSQL); err != nil {
 		return fmt.Errorf("failed to create table: %w", err)
 	}
-	if _, err := a.db.ExecContext(ctx, createIndexSQL); err != nil {
+	if _, err := a.db.Exec(ctx, createIndexSQL); err != nil {
 		return fmt.Errorf("failed to create index: %w", err)
 	}
 
@@ -237,27 +248,27 @@ func (a *PgxAdapter) createIndex(ctx context.Context, columns []string) error {
 	createIndexSQL := `CREATE INDEX IF NOT EXISTS ` + quotedIndexName +
 		` ON ` + quotedTableName + `(` + strings.Join(quotedColumns, ", ") + `)`
 
-	if _, err := a.db.ExecContext(ctx, createIndexSQL); err != nil {
+	if _, err := a.db.Exec(ctx, createIndexSQL); err != nil {
 		return fmt.Errorf("failed to create index %s: %w", indexName, err)
 	}
 
 	return nil
 }
 
-// GetConn is deprecated. With the stdlib bridge, connections are managed by *sql.DB.
-// Returns nil.
+// GetConn returns the underlying single connection, or nil if the adapter
+// was built from a pool or a bare DB.
 func (a *PgxAdapter) GetConn() *pgx.Conn {
-	return nil
+	return a.conn
 }
 
-// GetPool returns the underlying connection pool.
-// Returns nil if the adapter was created with a single connection.
+// GetPool returns the underlying connection pool, or nil if the adapter was
+// built from a single connection or a bare DB.
 func (a *PgxAdapter) GetPool() *pgxpool.Pool {
 	return a.pool
 }
 
-// GetDB returns the underlying *sql.DB.
-func (a *PgxAdapter) GetDB() *sql.DB {
+// GetDB returns the DB the adapter runs queries through.
+func (a *PgxAdapter) GetDB() DB {
 	return a.db
 }
 

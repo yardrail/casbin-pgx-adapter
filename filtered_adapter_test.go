@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/casbin/casbin/v3/model"
-	pgxadapter "github.com/noho-digital/casbin-pgx-adapter"
+	pgxadapter "github.com/yardrail/casbin-pgx-adapter"
 )
 
 func TestLoadFilteredPolicy(t *testing.T) {
