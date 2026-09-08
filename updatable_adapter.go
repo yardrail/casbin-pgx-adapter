@@ -55,17 +55,12 @@ func (a *PgxAdapter) UpdatePolicyCtx(ctx context.Context, sec string, ptype stri
 		return fmt.Errorf("failed to build update query: %w", err)
 	}
 
-	result, err := a.db.ExecContext(ctx, sqlQuery, args...)
+	result, err := a.db.Exec(ctx, sqlQuery, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update policy: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
+	if result.RowsAffected() == 0 {
 		return fmt.Errorf("policy not found")
 	}
 
@@ -82,11 +77,11 @@ func (a *PgxAdapter) UpdatePoliciesCtx(ctx context.Context, sec string, ptype st
 		return nil
 	}
 
-	tx, err := a.db.BeginTx(ctx, nil)
+	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	for i := range oldRules {
 		oldRule := oldRules[i]
@@ -122,22 +117,17 @@ func (a *PgxAdapter) UpdatePoliciesCtx(ctx context.Context, sec string, ptype st
 			return fmt.Errorf("failed to build update query: %w", err)
 		}
 
-		result, err := tx.ExecContext(ctx, sqlQuery, args...)
+		result, err := tx.Exec(ctx, sqlQuery, args...)
 		if err != nil {
 			return fmt.Errorf("failed to update policy: %w", err)
 		}
 
-		rowsAffected, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("failed to get rows affected: %w", err)
-		}
-
-		if rowsAffected == 0 {
+		if result.RowsAffected() == 0 {
 			return fmt.Errorf("policy not found at index %d", i)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
@@ -150,11 +140,11 @@ func (a *PgxAdapter) UpdateFilteredPoliciesCtx(ctx context.Context, sec string, 
 		return nil, fmt.Errorf("invalid field index: %d", fieldIndex)
 	}
 
-	tx, err := a.db.BeginTx(ctx, nil)
+	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	// Build query to find matching old policies
 	selectBuilder := a.psql.Select(selectColumns...).From(a.tableName).Where(sq.Eq{"ptype": ptype})
@@ -173,7 +163,7 @@ func (a *PgxAdapter) UpdateFilteredPoliciesCtx(ctx context.Context, sec string, 
 		return nil, fmt.Errorf("failed to build select query: %w", err)
 	}
 
-	rows, err := tx.QueryContext(ctx, sqlQuery, args...)
+	rows, err := tx.Query(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query policies: %w", err)
 	}
@@ -231,7 +221,7 @@ func (a *PgxAdapter) UpdateFilteredPoliciesCtx(ctx context.Context, sec string, 
 		return nil, fmt.Errorf("failed to build delete query: %w", err)
 	}
 
-	_, err = tx.ExecContext(ctx, sqlQuery, args...)
+	_, err = tx.Exec(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete policies: %w", err)
 	}
@@ -258,13 +248,13 @@ func (a *PgxAdapter) UpdateFilteredPoliciesCtx(ctx context.Context, sec string, 
 			return nil, fmt.Errorf("failed to build insert query: %w", err)
 		}
 
-		_, err = tx.ExecContext(ctx, sqlQuery, args...)
+		_, err = tx.Exec(ctx, sqlQuery, args...)
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert new policies: %w", err)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 

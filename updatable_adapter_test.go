@@ -92,7 +92,7 @@ func TestUpdatePolicy(t *testing.T) {
 			}
 
 			q, args, _ := builder.ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to verify policy: %v", err)
 			}
@@ -188,7 +188,7 @@ func TestUpdatePolicies(t *testing.T) {
 			// Count before update for rollback verification
 			var countBefore int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-			err := db.QueryRowContext(ctx, q, args...).Scan(&countBefore)
+			err := db.QueryRow(ctx, q, args...).Scan(&countBefore)
 			if err != nil {
 				t.Fatalf("Failed to count policies before: %v", err)
 			}
@@ -202,7 +202,7 @@ func TestUpdatePolicies(t *testing.T) {
 
 				// Verify transaction rollback - count should be unchanged
 				var countAfter int
-				err = db.QueryRowContext(ctx, q, args...).Scan(&countAfter)
+				err = db.QueryRow(ctx, q, args...).Scan(&countAfter)
 				if err != nil {
 					t.Fatalf("Failed to count policies after: %v", err)
 				}
@@ -240,9 +240,9 @@ func TestUpdateFilteredPolicies(t *testing.T) {
 			newRules: [][]string{
 				{"alice", "data3", "read"},
 			},
-			fieldIndex: 0,
+			fieldIndex:  0,
 			fieldValues: []string{"alice"},
-			wantErr:    false,
+			wantErr:     false,
 			expectedDeleted: [][]string{
 				{"alice", "data1", "read"},
 				{"alice", "data2", "write"},
@@ -258,9 +258,9 @@ func TestUpdateFilteredPolicies(t *testing.T) {
 			newRules: [][]string{
 				{"alice", "data1", "admin"},
 			},
-			fieldIndex: 0,
+			fieldIndex:  0,
 			fieldValues: []string{"alice", "data1"},
-			wantErr:    false,
+			wantErr:     false,
 			expectedDeleted: [][]string{
 				{"alice", "data1", "read"},
 				{"alice", "data1", "write"},
@@ -362,7 +362,7 @@ func TestUpdateFilteredPolicies(t *testing.T) {
 			// Verify new policies were inserted
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to count policies: %v", err)
 			}

@@ -97,7 +97,7 @@ func TestAddPolicies(t *testing.T) {
 			// Verify the policies were added
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).Where(sq.Eq{"ptype": tt.ptype}).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to verify policies: %v", err)
 			}
@@ -222,7 +222,7 @@ func TestRemovePolicies(t *testing.T) {
 			// Verify remaining policies
 			var count int
 			q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-			err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+			err = db.QueryRow(ctx, q, args...).Scan(&count)
 			if err != nil {
 				t.Fatalf("Failed to count remaining policies: %v", err)
 			}
@@ -246,7 +246,7 @@ func TestRemovePoliciesWithEmptyStringsInDB(t *testing.T) {
 		Columns("ptype", "v0", "v1", "v2", "v3", "v4", "v5").
 		Values("p", "alice", "data1", "read", "", "", "").
 		ToSql()
-	_, err := db.ExecContext(ctx, q, args...)
+	_, err := db.Exec(ctx, q, args...)
 	if err != nil {
 		t.Fatalf("Failed to insert test row: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestRemovePoliciesWithEmptyStringsInDB(t *testing.T) {
 		Columns("ptype", "v0", "v1", "v2", "v3", "v4", "v5").
 		Values("p", "bob", "data2", "write", "", "", "").
 		ToSql()
-	_, err = db.ExecContext(ctx, q, args...)
+	_, err = db.Exec(ctx, q, args...)
 	if err != nil {
 		t.Fatalf("Failed to insert test row: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestRemovePoliciesWithEmptyStringsInDB(t *testing.T) {
 	// Verify only bob's row remains
 	var count int
 	q, args, _ = testPsql.Select("COUNT(*)").From(tableName).ToSql()
-	err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+	err = db.QueryRow(ctx, q, args...).Scan(&count)
 	if err != nil {
 		t.Fatalf("Failed to count rows: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestAddPoliciesWithPartialDuplicates(t *testing.T) {
 	// Verify that the duplicate was silently ignored and unique policies were added
 	var count int
 	q, args, _ := testPsql.Select("COUNT(*)").From(tableName).ToSql()
-	err = db.QueryRowContext(ctx, q, args...).Scan(&count)
+	err = db.QueryRow(ctx, q, args...).Scan(&count)
 	if err != nil {
 		t.Fatalf("Failed to count policies: %v", err)
 	}

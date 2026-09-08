@@ -47,7 +47,7 @@ func (a *PgxAdapter) AddPoliciesCtx(ctx context.Context, sec string, ptype strin
 		return fmt.Errorf("failed to build insert query: %w", err)
 	}
 
-	_, err = a.db.ExecContext(ctx, sqlStr, args...)
+	_, err = a.db.Exec(ctx, sqlStr, args...)
 
 	if err != nil {
 		return fmt.Errorf("failed to add policies: %w", err)
@@ -63,11 +63,11 @@ func (a *PgxAdapter) RemovePoliciesCtx(ctx context.Context, sec string, ptype st
 	}
 
 	// Start a transaction
-	tx, err := a.db.BeginTx(ctx, nil)
+	tx, err := a.db.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	for _, rule := range rules {
 		deleteBuilder := a.psql.Delete(a.tableName).Where(sq.Eq{"ptype": ptype})
@@ -85,7 +85,7 @@ func (a *PgxAdapter) RemovePoliciesCtx(ctx context.Context, sec string, ptype st
 			return fmt.Errorf("failed to build delete query: %w", err)
 		}
 
-		_, err = tx.ExecContext(ctx, sqlStr, args...)
+		_, err = tx.Exec(ctx, sqlStr, args...)
 		if err != nil {
 			return fmt.Errorf("failed to remove policy: %w", err)
 		}
@@ -93,7 +93,7 @@ func (a *PgxAdapter) RemovePoliciesCtx(ctx context.Context, sec string, ptype st
 	}
 
 	// Commit transaction
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 

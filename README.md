@@ -1,8 +1,8 @@
 # casbin-pgx-adapter
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/noho-digital/casbin-pgx-adapter.svg)](https://pkg.go.dev/github.com/noho-digital/casbin-pgx-adapter)
-[![Test Status](https://github.com/noho-digital/casbin-pgx-adapter/actions/workflows/ci_test.yml/badge.svg)](https://github.com/noho-digital/casbin-pgx-adapter/actions/workflows/ci_test.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/noho-digital/casbin-pgx-adapter)](https://goreportcard.com/report/github.com/noho-digital/casbin-pgx-adapter)
+[![Go Reference](https://pkg.go.dev/badge/github.com/yardrail/casbin-pgx-adapter.svg)](https://pkg.go.dev/github.com/yardrail/casbin-pgx-adapter)
+[![Test Status](https://github.com/yardrail/casbin-pgx-adapter/actions/workflows/ci_test.yml/badge.svg)](https://github.com/yardrail/casbin-pgx-adapter/actions/workflows/ci_test.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/yardrail/casbin-pgx-adapter)](https://goreportcard.com/report/github.com/yardrail/casbin-pgx-adapter)
 
 A PostgreSQL adapter for [Casbin](https://casbin.org/) using the [pgx](https://github.com/jackc/pgx) driver.
 
@@ -19,7 +19,7 @@ Casbin is a powerful and efficient open-source access control library that suppo
 ## Installation
 
 ```bash
-go get github.com/noho-digital/casbin-pgx-adapter
+go get github.com/yardrail/casbin-pgx-adapter
 ```
 
 ## Usage
@@ -32,7 +32,7 @@ import (
     "log"
     
     "github.com/casbin/casbin/v3"
-    pgxadapter "github.com/noho-digital/casbin-pgx-adapter"
+    pgxadapter "github.com/yardrail/casbin-pgx-adapter"
 )
 
 func main() {
@@ -74,6 +74,43 @@ func main() {
     }
 }
 ```
+
+## Sharing a transaction with application writes
+
+Every query runs through a small pgx-native `DB` interface
+(`Exec` / `Query` / `QueryRow` / `Begin`), which `*pgxpool.Pool`, `*pgx.Conn`,
+and `pgx.Tx` all satisfy. `NewAdapterWithDB` builds an adapter over any of
+them, so an adapter bound to an open `pgx.Tx` writes its policy rows in that
+same transaction as your domain rows — both commit or roll back together:
+
+```go
+tx, err := pool.Begin(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+defer tx.Rollback(ctx)
+
+// ... your domain writes on tx ...
+
+adapter, err := pgxadapter.NewAdapterWithDB(tx, pgxadapter.WithTableName("casbin_rule"))
+if err != nil {
+    log.Fatal(err)
+}
+enforcer, err := casbin.NewEnforcer("model.conf", adapter) // loads policy through tx
+if err != nil {
+    log.Fatal(err)
+}
+enforcer.AddPolicy("alice", "data1", "read")               // written through tx
+
+if err := tx.Commit(ctx); err != nil {
+    log.Fatal(err)
+}
+```
+
+`NewAdapterWithDB` does **not** create the `casbin_rule` table or its
+indexes — the caller owns the schema (running DDL inside a caller's
+transaction is usually undesirable). Use `NewAdapterWithPool` /
+`NewAdapterWithConn` when you want the table created for you.
 
 ## Supported Interfaces
 
